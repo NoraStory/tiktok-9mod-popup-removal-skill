@@ -71,7 +71,9 @@ adb shell monkey -p com.xxx -c android.intent.category.LAUNCHER 1
 adb exec-out screencap -p > s.png && tesseract s.png stdout --psm 6
 ```
 
-## 依赖
+## 环境安装
+
+### 脚本依赖一览
 
 | 脚本 | 依赖 |
 |---|---|
@@ -80,7 +82,33 @@ adb exec-out screencap -p > s.png && tesseract s.png stdout --psm 6
 | pair_and_connect.sh / popup_watch.sh | bash + adb |
 | java_trace.js | Frida（gadget 或 frida-server） |
 
-外部工具：`baksmali`/`smali`（2.5.2+）、`apktool`、`aapt`/`aapt2`、`zipalign`、`apksigner`、`tesseract-ocr`、`openssl`、`Pillow`。
+### 必装工具
+
+| 工具 | 用途 | 安装 |
+|---|---|---|
+| **Python 3.8+** | 运行全部 Python 脚本（零第三方包） | python.org 安装并勾选 Add to PATH |
+| **Java JDK 8+** | 运行 baksmali / smali / apksigner | 任意 OpenJDK；大 dex 重汇编需 `JAVA_OPTS="-Xmx3200m"`（SKILL.md §7.4） |
+| **Android Platform-Tools** | `adb`：无线连真机、安装、截图、logcat | https://developer.android.com/tools/releases/platform-tools |
+| **Android Build-Tools** | `aapt`/`aapt2`、`zipalign`、`apksigner` | SDK Manager 或 `sdkmanager "build-tools;34.0.0"` |
+| **baksmali / smali 2.5.2+** | dex ↔ smali 互转 | https://github.com/baksmali/smali Releases，`java -jar` 调用 |
+
+**最小可用组合 = 以上 5 项**，即可跑通 README 快速开始的完整流程。
+
+### 按需安装
+
+| 工具 | 用途 | 安装 |
+|---|---|---|
+| **tesseract-ocr** | 弹窗截图文字识别 | Windows：`winget install UB-Mannheim.TesseractOCR`；Linux：`apt install tesseract-ocr` |
+| **Pillow** | 截图放大裁剪（OCR 预处理，SKILL.md §7.8）——**唯一需要的 pip 包** | `pip install Pillow` |
+| **openssl** | AES-128-ECB 解密混淆字符串（SKILL.md §4.3） | Git Bash 自带，或 `winget install openssl` |
+| **bash**（Git Bash / WSL） | 运行两个 `.sh` 脚本 | Windows 装 Git for Windows 即可 |
+| **rabin2 / radare2** | 查 .so 导入表，核验有无 native 校验能力（SKILL.md §7.2 通用排查法） | https://rada.re |
+| **apktool** | 资源层面反编译（可选） | https://apktool.org |
+| **Frida** | 运行 `java_trace.js` 动态追踪 | `pip install frida-tools` + 真机 frida-server / gadget；注意 vivo / Android 16 上 Gadget 因 PAC 崩溃不可用（SKILL.md §7.6） |
+
+### 真机要求
+
+一台开启**无线调试**的 Android 手机（开发者选项 → 无线调试），与电脑同一局域网。无线调试端口会漂移（SKILL.md §7.7），每次以手机界面当前显示为准，配合 `pair_and_connect.sh` 自动重试。
 
 ## 核心方法论摘要
 
