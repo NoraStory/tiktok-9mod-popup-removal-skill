@@ -1,6 +1,6 @@
-# mod-apk-popup-removal-skill
+# tiktok-9mod-popup-removal-skill
 
-> 从魔改 TikTok APK 中定位并移除强制弹窗的可复用逆向工程方法论与工具集。
+> 针对 **TikTok 魔改版 9MOD** APK 的逆向工程技能：定位并移除强制弹窗的可复用方法论与工具集。
 > 基于两个真实案例（v46.7.5 / v46.3.5）提炼，所有结论均附字节级出处或真机证据。
 
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
@@ -8,6 +8,14 @@
 ![License](https://img.shields.io/badge/license-EDU%20%2F%20research-orange)
 
 ---
+
+## 前置技能（必须先加载）
+
+本技能是专项技能，**依赖前置技能 `reverse-skill`（SKILL-reverse-skill，通用逆向基础技能）**。
+
+- 使用本技能前，请确认 `reverse-skill` 已安装并加载；它提供通用的 APK 反编译、smali 阅读、native 分析等基础能力。
+- 本技能只覆盖 **TikTok 9MOD 魔改包弹窗移除** 的专项流程与已知陷阱，不重复前置技能中的通用内容。
+- 若环境中没有 `reverse-skill`，请先获取并加载它，再回到本技能。
 
 ## 为什么做这个
 
