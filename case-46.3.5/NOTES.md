@@ -93,3 +93,14 @@
 
 复核结论：方案 D（预置 `""`/`dont=true` + classes42 断链）在原生层完全成立——预置同时压制弹窗①绘制与
 弹窗②触发器的 native 闸门；断链再兜底弹窗② Java 实现。首次启动的时序竞态（native 检查早于预置，最多弹一次）不变。
+
+## 2026-09-29 成品构建（Windows 本机复现 vb_signed 补丁）
+
+- 样本：`TikTok-v46.3.5-arm8.apk`（SHA-256 d5138080…），仅替换 classes42.dex（4,822,076 → 4,821,492 字节，与 vb_signed 尺寸一致）。
+- 工具：Java 17 + Maven Central 组件拼装 baksmali/smali 2.5.2（thin jar + dexlib2/util/guava/jcommander/antlr），
+  build-tools 36.0.0 的 zipalign/apksigner，debug.keystore 签名；条目级 diff：19,832 共同条目仅 classes42.dex 变化。
+- 修改内容与 VERIFICATION §三 完全一致：`f/a.d` 预置 `""`/`dont=true` 后 return；`f/e/f/g.run()` no-op。
+  全树重反汇编比对：7195 个类仅 4 个目标文件有内容差异（`X/r0N` vs `X/r0n` 的文件名 `.1` 互换是 Windows 大小写不敏感 FS 假象，类声明均完整）。
+- 成品：`TikTok-v46.3.5-nopopup.apk`，SHA-256 `330f53c6340a8d7f97ed33b0a7478e13d7056a7613c5d90b2e095909f0607a68`，345,872,968 字节。
+- 陷阱记录：① GitHub Releases 的 `releases/download` 直链 404（返回 HTML 页），fat jar 需绕道 Maven Central 依赖拼装；
+  ② PowerShell 双引号 here-string 会展开 `$Editor`/保留 `\"`，smali 生成务必用单引号 here-string 或外部脚本文件。
