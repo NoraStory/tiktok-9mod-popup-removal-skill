@@ -104,3 +104,15 @@
 - 成品：`TikTok-v46.3.5-nopopup.apk`，SHA-256 `330f53c6340a8d7f97ed33b0a7478e13d7056a7613c5d90b2e095909f0607a68`，345,872,968 字节。
 - 陷阱记录：① GitHub Releases 的 `releases/download` 直链 404（返回 HTML 页），fat jar 需绕道 Maven Central 依赖拼装；
   ② PowerShell 双引号 here-string 会展开 `$Editor`/保留 `\"`，smali 生成务必用单引号 here-string 或外部脚本文件。
+
+## 2026-09-29 真机闪退 → 根因：smali 把 dex 版本 037 降级成 035
+
+- 现象：首版成品（`330f53c6…`）安装后打开即闪退。
+- 结构级 diff（dex header + map_list，非 smali 层）：
+  - **magic：原版 `dex\n037` → 重汇编 `dex\n035`**（smali 2.5.2 默认 `--api 15`）；
+  - method_ids 38868→38867（无引用条目被裁，良性）、annotations_directory 3506→3504（去掉的两处 @Override，良性）；
+  - 其余全部类型计数一致。smali 层全树比对仅 4 个目标文件有差异。
+- classes42 含 4 个接口 `<clinit>`（037 特性），035 版本标记下 ART 校验拒绝 → 开屏闪退。
+  这也统一解释了 `fix3`（classes32 往返重建）的"死因未定"——同是 035 降级，与"native 校验"无关。
+- 修复：`smali a --api 24`（→037）重汇编重建。成品 `e5af1e75…`（4,821,488 字节 dex，条目 diff 仅 classes42.dex 变化）。
+- 流程教训：**重汇编后必须回读 dex magic 断言与原版一致**——静态"smali 层全绿"骗不过 ART 的版本特性校验。

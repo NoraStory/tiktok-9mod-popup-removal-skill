@@ -334,6 +334,18 @@ s = pat.sub(new_body, s, count=1)
 - App 的 FATAL 异常可能不出现在 `adb logcat` 里
 - **对策**：用 `dumpsys activity activities` 跟踪 Activity + `ps -A | grep` 判断进程存活
 
+### 7.10 smali 重汇编默认把 dex 版本降级（037→035 → 开屏闪退）【2026-09-29 真机实锤】
+- smali 2.5.2 默认 `--api 15`，输出 dex 版本标记 **035**；而 TikTok 官方 42 个 dex 全部是 **037**
+  （magic 在 dex 头 0x00–0x07）。classes42 就含 4 个接口 `<clinit>`（037 特性：接口静态初始化器）。
+- **症状**：装上后"打开即闪退"——版本标记 035 + 037 特性结构，ART 校验拒绝，dex 加载失败。
+- **对策（必须做）**：
+  1. 重汇编前读原 dex magic，用 `--api` 匹配版本：037→`--api 24`（或 25）、038→`--api 26..29`、039→`--api 30+`
+  2. 汇编后回读 magic 断言 `dex\n037\x00`（与原版一致）再打包
+- 此机制大概率就是 case-46.3.5 里 `fix3`（classes32 纯 Java 改动）"死因未定"的真凶——
+  同为 baksmali→smali 往返、同样被降级到 035，与所谓 native 校验无关。
+  对照实验可用 `--api 24` 重汇编 fix3 的 smali 源验证。
+- 同时注意：baksmali 默认 `--api 15` 只影响解析宽松度，反汇编一般无碍；**关键在 smali 侧**。
+
 ---
 
 ## 8. 真机验证方法

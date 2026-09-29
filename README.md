@@ -66,8 +66,8 @@ python3 scripts/dexscan.py work/dex
 
 # 4. patch smali — 见 SKILL.md §5（精确到方法签名）
 
-# 5. 重打包
-smali a work/smali_patch -o patched.dex
+# 5. 重打包（--api 必须匹配原 dex 版本：037→24、038→26、039→30；否则开屏闪退，见 SKILL.md §7.10）
+smali a --api 24 work/smali_patch -o patched.dex
 python3 scripts/rebuild_apk.py original.apk output.apk "classes33.dex=patched.dex"
 zipalign -f -p 4 output.apk aligned.apk
 apksigner sign --ks key.keystore aligned.apk
