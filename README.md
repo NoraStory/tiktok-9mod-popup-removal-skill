@@ -134,7 +134,7 @@ adb exec-out screencap -p > s.png && tesseract s.png stdout --psm 6
 | 版本 | 弹窗①（英文） | 弹窗②（俄文） | 状态 |
 |---|---|---|---|
 | v46.7.5 | classes28 + `libieuwh.so`，预置 `dont=true` | classes33 断取数链，触发器 `prime0`@classes42 | 真机验证通过 |
-| v46.3.5 | classes32 + `libprobeq.so`，预置 `dont=true`（libprobeq/libpluzneba 均读该开关） | classes42 断链（同 v46.7.5 方法） | 静态核验通过 |
+| v46.3.5 | classes32 + `libprobeq.so`，预置 `dont=true`（libprobeq/libpluzneba 均读该开关） | classes42 断链（同 v46.7.5 方法） | **补丁链已真机验证到第 4 层**：dex 版本门/杀点/PM 摘要门均已破解，但该发行版为多层签名门 + 动态定义类 + 远程配置依赖（gist 已 404，原包本身已坏），见 `case-46.3.5/DEVICE-DEBUG-LOG.md`。建议使用 v46.7.5 线 |
 
 不同版本的注入布局完全不同，**不能用固定 dex 编号**——先跑 `version_detect.py`。
 

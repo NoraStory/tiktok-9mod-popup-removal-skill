@@ -346,6 +346,32 @@ s = pat.sub(new_body, s, count=1)
   对照实验可用 `--api 24` 重汇编 fix3 的 smali 源验证。
 - 同时注意：baksmali 默认 `--api 15` 只影响解析宽松度，反汇编一般无碍；**关键在 smali 侧**。
 
+### 7.11 伪装成官方加固库的 mod 主加载器 + 多层签名门 + 动态定义类【2026-09-29 真机剖析】
+部分发行版（46.3.5 arm8）把整个 mod 做成**伪装成官方加固库的主加载器**：
+- `TT_J/TT_S_E`（ContentProvider）里 `System.loadLibrary("iam")`——先于 Application 加载；
+  libiam.so 实为 mod 主加载器，运行时 DefineClass 创建 **dex 中不存在**的类（`me/tigrik1`、
+  `kotlin/jvm/internal/AFpS124S0000000_3` 等），并向 Application(11)/MainActivity(117)/mod 插件
+  注册 native；dex 静态分析对动态类内的逻辑完全不可见
+- 防二次打包 = **多层签名门**：Application 生命周期、MainActivity.onCreate（sub_705A8，≥9 个 NPE
+  守卫）、钩子分发器（me/tigrik/a.a）、崩溃处理器（uncaughtException）各嵌一套
+  "摘要比对 → killProcess+exit"；逐层破解实录见 `case-46.3.5/DEVICE-DEBUG-LOG.md`
+- **动手前先确认原包能不能用**：此类 mod 常依赖远程配置（gist/自建站），配置 404 时**原包即坏**
+  （46.3.5 的 gist 已 404，原版也只崩到自带 CrashActivity）。只看"进程存活"不够，
+  必须查 `topResumedActivity` 是否真实到达主界面
+
+### 7.12 静默自杀（无 FATAL/无 tombstone）的识别与杀点定位
+- 症状：启动后数秒死、三处无痕迹 → Java 层 `Process.killProcess` 自杀
+- 定位：`logcat -b events` 量 am_proc_start→am_proc_died 间隔；主日志搜
+  `Process: Sending signal. PID: <pid> SIG: 9`（自杀标记，出现即 Java 自杀而非系统杀）
+- 杀点三连（native）：`GetStaticMethodID(Process,"myPid")` → CallStaticInt →
+  `GetStaticMethodID(Process,"killProcess")` → CallStaticVoid → `System.exit`；
+  .so 内 grep "killProcess" 字符串 → xref 所在函数 → NOP 掉 CallStatic 的 `BLR X8` 即废武功
+- JNI 偏移速查：env+0x418=CallStaticIntMethod、env+0x478=CallStaticVoidMethodV、
+  env+0x340=CallVoidMethod、env+0x720=ExceptionCheck、env+0x108=GetMethodID、
+  env+0x538=NewStringUTF、env+0x6B8=RegisterNatives
+- RegisterNatives 表在 .data.rel.ro，文件内槽位为 0，须解析 .rela.dyn（R_AARCH64_RELATIVE=1027）
+  取 addend 还原 {name,sig,fn} 三元组，才能反查"哪个类的方法由哪个函数实现"
+
 ---
 
 ## 8. 真机验证方法
