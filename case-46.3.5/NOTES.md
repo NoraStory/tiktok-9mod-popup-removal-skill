@@ -71,3 +71,25 @@
 - 弹窗①：**预置 `dont=true` 方案（方案 D）在静态上是正确路径** —— 修正初版"libchillbro 无 dont 开关、无法预置"的错误判断。
   初版建议的"逆向 patch libchillbro.so"方向作废（chillbro 与弹窗无关；真正要动也是 probeq/pluzneba，且无必要）。
 - "native 完整性校验"条目从陷阱清单中降级：mod 三 .so 无校验能力；classes32 重建失败另有原因（Java 异常路径/构建副作用）。
+
+## 2026-09-29 IDA 原生层复核（ida-pro-mcp，样本 SHA-256 d5138080… 一致）
+
+用 IDA 9.4 无头模式反编译 libprobeq.so / libpluzneba.so，把"两弹窗共用 dont 开关"从推断升级为字节级证据：
+
+| 证据 | libprobeq.so（弹窗①） | libpluzneba.so（弹窗②触发器） |
+|---|---|---|
+| 字符串池基址 | 0x97CD8 | 0xBDEB8 |
+| prefs 文件名 | 池+3519 = **空串 ""**（0x98A97），intern 后缓存为全局 jstring | 同布局（Dex2C 同代码生成器） |
+| prefs 键 | 池+5608 = **"dont"**（0x992C0） | 池内明文（闸门函数用同一键） |
+| getSharedPreferences 方法 ID | GetMethodID @0x2e5a4（名=池+0x13BD，签名=池+0x13D2），调用 @0x2e5f0 | GetMethodID @0x5275c（名=池+0x31CE），调用 @0x527a8 |
+| getBoolean 方法 ID | GetMethodID @0x2e734（名=池+0x140B="getBoolean"，签名=池+0x1416） | GetMethodID @0x528ec（名=池+0x321C="getBoolean"） |
+| 读取 + 默认值 | CallBoolean 封装 @0x2e780，key="dont"（全局 jstring），default=false | CallBoolean 封装 @0x52938，default=false |
+| **闸门** | **0x2e7cc `CBNZ W8, loc_2F5F8`**：dont=true → 析构+返回，弹窗代码不执行；false 才建 HandlerThread/拉 URL/AlertDialog | **0x52980 `CBNZ W8, loc_537B4`**：dont=true → 跳过后继逻辑 |
+| 反射触发 | —（弹窗①全 native） | sub_47B10 @0x48f24 `NewStringUTF(池+0x1F6B)` = "me.tiktokupdatez.b.a" → CallObjectMethod 辅助加载 → NewGlobalRef 缓存；JNI_OnLoad 经注册表登记该 native |
+
+辅助识别（沉淀进 SKILL.md §5.3）：registerNativesForClass 的 native 实现（probeq sub_2FA78）以
+`NewStringUTF(池+off)→intern→NewGlobalRef` 成块缓存全部运行时字符串；JNIEnv 偏移 0x48=FindClass、
+0xA8=NewGlobalRef、0x108=GetMethodID、0x538=NewStringUTF、0x6B8=RegisterNatives、0x720=ExceptionCheck。
+
+复核结论：方案 D（预置 `""`/`dont=true` + classes42 断链）在原生层完全成立——预置同时压制弹窗①绘制与
+弹窗②触发器的 native 闸门；断链再兜底弹窗② Java 实现。首次启动的时序竞态（native 检查早于预置，最多弹一次）不变。
