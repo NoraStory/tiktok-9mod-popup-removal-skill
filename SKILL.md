@@ -12,6 +12,63 @@ description: 移除 TikTok 等魔改 APK(9MOD/max.ru/TikTok Central 等发行版
 
 ---
 
+## 0. 测试环境（本项目全部实测,版本号精确到具体值）
+
+> 以下版本即本技能所有断言的验证环境。换用其他版本前,先按 §7 陷阱清单自查差异。
+
+### 0.1 主机
+
+| 项 | 值 |
+|---|---|
+| 操作系统 | Windows 11 25H2（内核 NT 10.0.26200, x64） |
+| 命令行 | **PowerShell**（全部命令按 PS 语法给出） |
+| 工作目录 | 非 C 盘（本案例 `E:\...\vmshare\`） |
+
+### 0.2 工具与依赖清单（逐项实测版本）
+
+| 工具 | 精确版本 | 用途 | 安装/配置关键步骤 |
+|---|---|---|---|
+| Python | **3.12.13** | 全部脚本（`scripts/*.py` 零第三方依赖） | python.org 安装,勾选 Add to PATH;OCR 预处理另需 `pip install Pillow` |
+| JDK | **17.0.20 LTS** | `java -jar` 跑 smali/baksmali;apksigner 内部调用 | 任意 OpenJDK 17;`JAVA_HOME` 指向 JDK 根 |
+| Android platform-tools | **37.0.1-15733141**（adb 1.0.41） | 设备连接/安装/logcat/screencap | SDK Manager 或 platform-tools zip 解压,加入 PATH |
+| Android build-tools | **36.0.0**（apksigner **0.9**、aapt2 **2.20-13193326**、zipalign 同版本） | 对齐、签名、包信息 | `sdkmanager "build-tools;36.0.0"`;`build_mod_apk.py` 自动探测(或设 `ANDROID_BT`) |
+| smali / baksmali | **2.5.2**（依赖 antlr **3.5.2**、dexlib2 **2.5.2**、guava **27.1-android**、jcommander **1.64**、stringtemplate **3.2.1**、util **2.5.2**） | dex↔smali 互转 | GitHub Releases 下载 jar,`java -jar baksmali-2.5.2.jar d` 调用;**不要用 2.5.2 以外版本**(§7.10 的 --api 行为) |
+| IDA Pro | **9.4**（headless idalib + Hex-Rays） | native 静态分析、反编译 | 本技能经 ida-pro-mcp 使用;worker 会话超时后重新 `idb_open` |
+| Frida | **17.18.0** + frida-tools **14.10.4** | 模拟器 Java 层诊断(可选) | PC 端 `pip install frida==17.18.0 frida-tools==14.10.4`;设备端 frida-server 需同版本;仅用于**模拟器**(真机见 §7.6) |
+| tesseract-OCR | 本环境未安装 | 弹窗截图文字识别(可选) | `winget install UB-Mannheim.TesseractOCR`;未装时用人工看图替代 |
+| Pillow | 随 MIMO_PYTHON 提供 | 截图像素分析/OCR 预处理 | `pip install Pillow` |
+
+**最小可用组合**：Python 3.12.13 + JDK 17.0.20 + platform-tools 37.0.1 + build-tools 36.0.0 + smali 2.5.2 —— 即可跑通 §10 SOP 全流程;IDA 与 Frida 仅在逆向新变体时需要。
+
+### 0.3 目标设备
+
+| 设备 | 规格 | 角色 |
+|---|---|---|
+| LDPlayer 14（雷电14） | Android **14** x86_64, 已 root, ARM 翻译层可运行 arm64-only APK | 主调试环境（原版可完整运行） |
+| vivo V2505A | Android **16**, **无 root**, USB 调试 | 最终验收 |
+| MuMu 12 | Android **15** x86_64 | **已排除**——houdini 翻译层跑 TikTok 46.3.5 直接 SIGSEGV,原版也不行,勿浪费时间 |
+
+### 0.4 环境注意事项与已踩坑（每条都有对应解决方法）
+
+| # | 坑 | 现象 | 解决方法 |
+|---|---|---|---|
+| 1 | **MuMu 12 不兼容** | 原版 TikTok 46.3.5 直接 SIGSEGV | 换 LDPlayer 14;houdini 翻译层实现不同 |
+| 2 | **Frida native hook 在 ARM 翻译层崩溃** | hook 经 houdini 翻译执行的 native 方法 → `SIGSEGV SI_KERNEL`(崩在 `tp-io-*` 线程) | 模拟器上只 hook **纯 Java 方法**;native 用 IDA 静态分析 |
+| 3 | **Frida 17 无内置 Java bridge** | Python 裸 API `create_script` 里 `Java is not defined` | 用 **frida CLI**(`frida -D device -f PKG -l s.js`)或 ESM 引入 frida-java-bridge |
+| 4 | **frida-gadget 在 vivo/Android 16 不可用** | dlopen 阶段 SIGSEGV(PAC 指针认证) | 真机放弃注入,走静态分析 + `adb reverse` 抓包 |
+| 5 | **vivo 屏蔽第三方 App logcat** | FATAL/tombstone 看不到 | `dumpsys activity activities` + `ps -A` 判存活;杀链用 §7.12 零 frida 定位法 |
+| 6 | **PowerShell 内联代码转义** | 双引号 here-string 展开 `$var`;`python -c` 内嵌引号静默失败;JSON 数组被拆散 | **一律写 `.py` 文件再执行**,不内联 |
+| 7 | **Windows 大小写不敏感** | baksmali 输出 `X/r0N` 与 `X/r0n` 互相覆盖,类丢失 | 在 WSL/Linux 做全量 baksmali→smali;或用字节级 dex patch 绕过 |
+| 8 | **dex 版本降级** | smali 2.5.2 默认 `--api 15` → 输出 035 → ART 拒载,开屏闪退 | `smali a --api 24`(037)/26(038)/30(039);汇编后回读 magic 断言 |
+| 9 | **大 dex OOM** | 7MB dex 重汇编 JVM 需 3GB+ 堆 | `JAVA_OPTS="-Xmx3200m"` + 4GB swap |
+| 10 | **无线 adb 端口漂移** | 配对窗口 30s,端口每次变 | 以手机界面当前端口为准,`pair_and_connect.sh` 重试 |
+| 11 | **弹窗不在开屏时出现** | 反复盯着开屏等弹窗等不到 | 弹窗链在 **MainActivity.onCreate** 触发;开屏卡住可 `am force-stop` 后直接 `am start MainActivity` 绕过 |
+| 12 | **"模拟器里装的是哪个包"拿不准** | 反复安装 340MB 包后记忆混乱,签名观感相似 | 文件级指纹一锤定音:`adb shell pm path` 拿路径 → `md5sum base.apk` 与本地各包 MD5 对比;`dumpsys package` 的 `Signatures:` 行同时看 |
+| 13 | **uiautomator 读不到 mod 弹窗** | dump 只有背景文本 | mod 弹窗是自绘/AlertDialog 覆盖层,改用截屏+人工或像素 diff |
+| 14 | **IDA headless worker 超时** | 会话失联 | `idb_list` 查看后重新 `idb_open`;补丁最终以 Python 脚本写文件为准(IDB 内 patch 不回写 so) |
+
+---
+
 ## 1. 总流程
 
 ```
