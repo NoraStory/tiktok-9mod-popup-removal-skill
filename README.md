@@ -151,3 +151,10 @@ python scripts/build_mod_apk.py TikTok-v46.3.5-arm8.apk 无弹窗.apk `
 
 本项目仅用于安全研究与学习。逆向修改后的 APK 不得用于分发或任何侵犯原软件权利的行为。
 使用者自行承担相关法律与设备风险。
+
+## License
+
+本项目以 **GNU Affero General Public License v3.0(AGPL-3.0)** 发布,完整协议文本见 [LICENSE](LICENSE)。
+
+- 任何对本项目代码的修改与网络提供服务,均须以 AGPL-3.0 开放源码
+- 衍生作品须保留同样的 AGPL-3.0 协议与版权声明
