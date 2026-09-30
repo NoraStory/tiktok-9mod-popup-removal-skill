@@ -1,7 +1,15 @@
 # TikTok v46.3.5 差异核验与去弹窗过程正确性 — 核验报告
 
+> **⚠️ 2026-09-30 状态更新**:本文是 09-27 的静态核验快照,结构分析与机制结论大部分仍有效,
+> 但以下三点已演进,以 `SIGNATURE-GATE-BREAKTHROUGH.md` 为准:
+> ① "vb_signed.apk 是当前已知最优解" → 已被 **nopop-v3**(3 so + classes42 断链,双端验证)取代,
+>    vb 时代未知的**双重 MD5 签名门**(me.tigrik.a.a)是历次上机失败的真因;
+> ② "fix3 死因需 logcat 才能定论" → 已定位为 **dex 版本降级**(035,SKILL §7.10);
+> ③ "AwemeHostApplication 由官方 libiam.so 加固" → libiam 即 **mod 主加载器**。
+> 样本路径 `/home/kali/...` 为当时的工作目录,现已清理,原件备份见 `../test-data-46.3.5/`。
+
 日期：2026-09-27　方法：全静态（baksmali 2.5.2 / r2 6.0.5 / 自研 ADRP xref 扫描 / zip 逐条目 diff）
-样本：`/home/kali/Desktop/Tiktok/TikTok-v46.3.5-arm8.apk`（原版 MOD，SHA-256 d5138080…）
+样本：`TikTok-v46.3.5-arm8.apk`（原版 MOD，SHA-256 d5138080…）
 对照：`TikTok_Central_v46.7.5_(MOD).apk` 与已验证成品 `_no-popup.apk`（SHA-256 89218273…）
 
 ---

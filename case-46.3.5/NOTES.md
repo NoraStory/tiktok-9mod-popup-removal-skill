@@ -1,7 +1,12 @@
 # v46.3.5 案例记录
 
 > **2026-09-27 静态核验修订版**。本版修正了初版的三个错误结论（加载器映射、"native 完整性校验"、dont 开关不可用），
-> 完整证据链见 `work/20260927-062910-tiktok-v46-3-5-mod-apk-patch/VERIFICATION.md`。
+> 完整证据链见 `VERIFICATION.md`。
+>
+> **⚠️ 2026-09-30 进一步修正**:下表中"Application 全生命周期 native(**官方 libiam.so 加固,非 mod**)"
+> 已被推翻——libiam.so 实为 **mod 的主加载器**(伪装官方加固名),负责签名门/动态类定义/全量 native 注册,
+> 见 `SIGNATURE-GATE-BREAKTHROUGH.md`。本文件其余结构分析(注入框架映射/prefs 机制/断链点)仍有效。
+> 当年引用的 `work/...` 路径为本地临时目录,已清理;产物与证据备份在仓库 `test-data-46.3.5/`。
 
 ## APK 信息
 - 包名：`com.zhiliaoapp.musically`

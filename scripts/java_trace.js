@@ -4,7 +4,15 @@
  * Goal: find out (a) the exact URL the popup content is fetched from,
  * (b) which class/method actually draws the popup.
  *
- * Run against the gadget-injected debug build:
+ * !! FRIDA 17 NOTE (2026-09-30): the Java bridge is NO LONGER bundled in the
+ *    frida-core JS runtime. A bare `Java` object is undefined (ReferenceError).
+ *    Either run through the frida CLI with a frida-java-bridge capable runtime,
+ *    or pin frida 16.x for this script. Verified working path on LDPlayer 14:
+ *      frida 16.x server + `frida -D emulator-5554 -f com.zhiliaoapp.musically -l java_trace.js`
+ *    On ARM-translation emulators NEVER hook methods executed by native code
+ *    (houdini conflict -> SIGSEGV SI_KERNEL); Java-only hooks are safe.
+ *
+ * Run against the gadget-injected debug build (frida <=16):
  *   adb forward tcp:27042 tcp:27042
  *   frida -H 127.0.0.1:27042 -n Gadget -l java_trace.js
  *

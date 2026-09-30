@@ -350,7 +350,7 @@ s = pat.sub(new_body, s, count=1)
 
 改 `num6()` 的浮点值（`afmod.com` → `afmod.inv`，同长度替换）。
 
-**风险（核验修订）**：v46.3.5 实测此法也崩，但经 .so 逆向证明 mod 的 native 库**没有**文件 I/O 与 kill 能力（详见 7.2），此死因未定——避免依赖此法，优先用预置开关。
+**风险（核验修订）**：v46.3.5 实测此法也崩，但经 .so 逆向证明 mod 的 native 库**没有**文件 I/O 与 kill 能力（详见 7.2）；后经真机复验定位死因为 **dex 版本降级**（baksmali→smali 往返把 037 降到 035，见 7.10），与数据表改动本身无关——用 `smali a --api 24` 保持版本即可避免。仍优先用预置开关（改动更小）。
 
 ---
 
@@ -368,7 +368,8 @@ s = pat.sub(new_body, s, count=1)
 - 真实死因（按证据）：① 删 registerNativesForClass → UnsatisfiedLinkError（可完整解释）；
   ② native 方法改成 Java 体 → RegisterNatives 注册到非 native 方法 → NoSuchMethodError →
   ExceptionInInitializerError → 启动崩溃（Java 异常路径，非杀进程）；
-  ③ 纯 Java 浮点表改动导致崩溃的死因未定（baksmali→smali 往返会重排整个 dex，疑似构建副作用）。
+  ③ 纯 Java 浮点表改动导致崩溃 → 后经复验定位为 **dex 版本降级**（baksmali→smali 往返把 037
+  降为 035，ART 拒载，见 7.10），与"完整性校验"无关。
 - **通用排查法**：拿到 .so 先查 `rabin2 -i xxx.so`（导入表）+ svc 扫描——无文件 I/O 就不可能有 dex 校验。
 - **稳妥策略不变**：不碰 native 保护的 dex，用其他 dex 预置 `dont` 开关 + 断链。
 - vivo/Android 16 上 logcat 部分被屏蔽，历史测试缺 logcat 佐证是误判根源——**重打包失败必留 logcat 证据**
@@ -412,9 +413,9 @@ s = pat.sub(new_body, s, count=1)
 - **对策（必须做）**：
   1. 重汇编前读原 dex magic，用 `--api` 匹配版本：037→`--api 24`（或 25）、038→`--api 26..29`、039→`--api 30+`
   2. 汇编后回读 magic 断言 `dex\n037\x00`（与原版一致）再打包
-- 此机制大概率就是 case-46.3.5 里 `fix3`（classes32 纯 Java 改动）"死因未定"的真凶——
+- 此机制就是 case-46.3.5 里 `fix3`（classes32 纯 Java 改动）"死因未定"的真凶——
   同为 baksmali→smali 往返、同样被降级到 035，与所谓 native 校验无关。
-  对照实验可用 `--api 24` 重汇编 fix3 的 smali 源验证。
+  （fix3 未单独复测，机制由 7.10 的 ART 拒载实验实锤。）
 - 同时注意：baksmali 默认 `--api 15` 只影响解析宽松度，反汇编一般无碍；**关键在 smali 侧**。
 
 ### 7.11 伪装成官方加固库的 mod 主加载器 + 动态定义类【2026-09-29 真机剖析 / 09-30 修正】
