@@ -70,3 +70,19 @@
 5. **XOR 字符串常量扫描**：45 字节窗（44 字符+NUL）按 8 字节循环 key 异密后为合法 base64+padding
    的，即为签名摘要常量；vaddr==file offset 时可直接文件内定位
 6. **v1/v2 对照实验定生死**：原 dex + 换签名若死 → 签名门；原签名 + 换 dex 若死 → 内容门
+
+## 模拟器动态调试路线（2026-09-30 追加）
+
+- **MuMu 12（x86_64, Android 15, 伪装 OPPO）**：frida-server 17.18 x86_64 以 root 运行成功
+  （MuMu 无 su，但 `adb root` 直接给 root adbd）；**Java 层 frida 钩子全部安装成功**
+  （killProcess/exit/getPackageInfo/Signature）——诊断能力已验证
+- **但 TikTok 46.3.5 在 MuMu 上无法运行**：arm64-only 的 libiam.so 在 AwemeHostApplication.<init>
+  的 System.loadLibrary 阶段即触发 libhoudini SIGSEGV（trying to execute non-executable memory，
+  solist_get_headv + libhoudini 翻译栈）。**原版未补丁 APK 同样崩** → 与补丁无关，纯属
+  MuMu 翻译层与该 TikTok 的 arm64 库不兼容
+- 结论：x86 模拟器路线需换翻译层实现（雷电 9 / Genymotion+旧版 houdini），
+  或回到真机（root/gadget）。frida 17.18 PC 端须与 gadget/server 版本严格一致，
+  且 Python 裸 create_script 无 Java bridge（frida 17 起），须用 frida CLI 或自带 bridge
+- RegisterNatives 数量门：把 native 表绑到 Java 方法上时 ART 直接 SIGABRT
+  （"no pending exception expected: NoSuchMethodError"），不是静默失败——
+  把 Java 方法改回 native 或将注册计数减一（如 11→10）即可绕过
