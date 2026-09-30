@@ -604,6 +604,59 @@ python scripts/build_mod_apk.py 原包.apk 成品.apk \
 期望值替换优于杀点 NOP 的原因：返回值语义（"TRUE"）被调用方（MainActivity 替换实现）依赖，
 粗暴 NOP 会返回 null/错误状态 → 下游 NPE（expH 系列全部失败的根因）。
 
+**46.3.5 最终成品补丁清单（nopop-v3, 模拟器+真机双验证通过）**：
+
+| 文件 | 改动 | 拦截目标 |
+|---|---|---|
+| lib/arm64-v8a/libiam.so | 506B blob 期望值等长替换 | 签名门(me.tigrik.a.a 双重MD5) |
+| lib/arm64-v8a/libprobeq.so | 0x2E7CC CBNZ→B | 弹窗①(英文)绘制链 |
+| lib/arm64-v8a/libpluzneba.so | 0x52980 CBNZ→B | 弹窗②触发器部分路径 |
+| classes42.dex | f/a.d 改写为"写 prefs("".dont=true)+return"（baksmali→smali --api 24 往返） | **弹窗②(俄语)全部路径** + 预置 dont 双保险 |
+
+**教训：native 闸门 patch 不一定能拦住全部弹窗路径。** 46.3.5 实测：probeq B-patch
+杀掉了英文弹窗，但俄语弹窗仍然出现——多个 native 库/多条路径触发**同一个 dex 入口**
+（`me/tiktokupdatez/b.a → f/a.d`）。当弹窗绘制入口是**纯 Java 类**时，直接把入口终点
+方法改写为"写 prefs + return"是最彻底的断链（顺带预置 dont 闸门，双保险）；这比追
+补每一条 native 调用路径更快更稳。
+
+### 10.7 真机闪退但模拟器正常——mod 残留网络链路陷阱【2026-09-30 真机实锤】
+
+**现象**：nopop-v2（只改 3 个 so）在模拟器存活 100s+，真机（vivo, Android 16）闪退。
+
+**根因**：只 patch native 门、不动 dex 时，**mod 的远程取数链路仍然活着**——
+`f/a.d` 起线程拉远程配置（gist 404）。模拟器上该请求**静默失败**（吞异常）；
+真机 Android 16 上链路抛出未捕获异常 → 进入 mod 的 `uncaughtException` 处理器
+（sub_4B9D0，同样有杀点与跳转 CrashReportActivity 逻辑）→ kill。
+
+**解决**：v3 用 dex 断链（f/a.d 写 prefs + return）**同时消灭了弹窗与异常源**，
+真机随即不再闪退。
+
+**方法论**：
+1. 模拟器验证通过 ≠ 真机可用。**同一包两台设备的行为差异 = 环境依赖路径的差异**
+   （网络栈/时区/locale/厂商 ROM），优先审查"网络请求+异常处理"类代码。
+2. `uncaughtException` 处理器是常被忽视的杀点——任何未捕获异常都会进入它，
+   它内部还做设备信息采集（TreeMap + versionCode/versionName + 反射字段）并
+   `startActivity(CrashReportActivity) + killProcess + exit`。真机闪退而模拟器正常时，
+   先怀疑这条路径。
+3. 复现/消除实验顺序：先全新安装（清数据）排除残留 prefs；再对比"只断 native"与
+   "native+dex 断链"两个版本。
+
+### 10.8 "装的到底是哪个包"——MD5 文件指纹核验法【2026-09-30】
+
+反复装卸 340MB 包后，"模拟器/真机里现在是什么版本"极易记混，且**签名观感不可靠**
+（用户与 Agent 各执一词）。一锤定音：
+
+```bash
+adb shell pm path com.zhiliaoapp.musically
+# package:/data/app/~~xxxx/base.apk
+adb shell md5sum /data/app/~~xxxx/base.apk
+# 与本地各候选 APK 的 MD5 逐一对比 —— MD5 一致 = 同一个文件,无争论空间
+```
+
+签名（`dumpsys package` 的 `Signatures:` 行）作为第二佐证（modder=原版 / debug=重签版）。
+注意 `pm install` 的 Incremental/Streamed Install 输出 "Success" 不代表装的是你以为的文件——
+**以 MD5 为准**。
+
 ### 10.4 XOR-blob 加密：等效化简 + 差分重加密
 
 mod 用 NEON（`vshlq_u64` 移位表 + `vqtbl4q` 查表 + `veorq`）生成 keystream。
@@ -639,6 +692,7 @@ blob 序列化数组 args[1:] 存的是 hook 框架类名，native 逐个 `Class
 4. IDA: 对照包死点函数反编译 → 门语义分类(§10.3 表格)
 5. dump_jnitable.py 还原注册表 → 确认"死点帧"对应的 native fn
 6. 按门类型修复: 期望值等长替换(patch_sig_gate_blob) / 闸门改跳(patch_gate_branch)
-7. build_mod_apk.py 组包重签 → 模拟器验证存活 + topResumedActivity 推进
-8. 真机验证（§8）+ 弹窗不出现确认
+7. 弹窗入口若为纯 Java 类 → dex 断链(写 prefs+return, §10.3 末尾), 消灭弹窗+异常源
+8. build_mod_apk.py 组包重签 → 模拟器验证存活 + topResumedActivity 推进
+9. 真机验证（§8）: 存活 + 弹窗消失双确认; 模拟器/真机行为不一致时按 §10.7 排查
 ```

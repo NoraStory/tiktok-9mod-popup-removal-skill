@@ -208,9 +208,29 @@ adb install -r TikTok-4635-nopop-v2.apk; adb shell am start ...
 | sigfix 仅 libiam | 存活 70s+, 越过 MainActivity.onCreate（门已放行）|
 | nopop-v2 三 so | 存活 75s+, NewUserJourney 正常, 零 kill/FATAL/SIGSEGV |
 
-## 10. 遗留与真机清单
+## 10. 最终成品: nopop-v3(双端验证通过)
 
-- 真机 vivo V2505A（Android 16）: 安装前必须卸载原包（签名不同）, 会清登录态, 需用户确认;
-- libchillbro.so 只保护 4 个官方类, 与弹窗/签名门无关（历史结论维持）;
-- mod 远控（gist 404）失效不影响本地运行（09-30 修正）;
-- 成品: 桌面 `TikTok-46.3.5-无弹窗-修复版.apk` = nopop-v2。
+v2(仅 3 so)真机暴露两个问题:
+1. **俄语弹窗仍在** —— 弹窗②的触发路径不止 pluzneba 闸门一处, `me/tiktokupdatez/b.a`
+   (纯 Java, classes42) 的终点是 `f/a.d(Context)`, 多条 native 路径都能到达它;
+2. **真机闪退而模拟器正常** —— 未断链的 f/a.d 在真机 Android 16 上起线程拉远程配置抛
+   未捕获异常 → mod 的 uncaughtException 处理器(sub_4B9D0, 内含设备采集+CrashReportActivity
+   跳转+kill)杀进程; 模拟器上请求静默失败所以不崩。
+
+**v3 = v2 + classes42.dex(f/a.d 改写为"写 prefs("".dont=true)+return")**:
+- 断弹窗②全部路径 + 预置 dont 双保险;
+- 消灭异常源 → 真机不再闪退;
+- baksmali 往返的安全验证: magic `dex\n037\0` ✓、class_defs 7195 ✓、字符串 34003 ✓、
+  **类名集合大小写敏感比对一致** ✓(scripts 里用 dexscan.py 比对, 防丢类)。
+
+验证结果:
+- 模拟器(LDPlayer14): 存活 100s+, 零 crash/kill
+- 真机(vivo V2505A, Android 16): 用户确认**弹窗消失(英/俄均无)、运行正常**
+
+最终交付: 桌面 `TikTok-46.3.5-无弹窗-修复版.apk` = TikTok-4635-nopop-v3.apk。
+
+## 11. 经验沉淀(已并入 SKILL.md)
+
+- 弹窗入口是纯 Java 类时, **dex 断链(写 prefs+return)优于逐个 patch native 触发路径**
+- 模拟器通过 ≠ 真机通过: 环境差异路径(网络/异常处理)优先审查; uncaughtException 是隐形杀点
+- 版本核对用 MD5 文件指纹(`pm path` + `md5sum base.apk`), 签名观感不可靠
