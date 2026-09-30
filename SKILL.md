@@ -1,8 +1,14 @@
+---
+name: mod-apk-popup-removal-skill
+description: 移除 TikTok 等魔改 APK(9MOD/max.ru/TikTok Central 等发行版)内置的更新横幅、赞助弹窗与广告弹窗,并破解其防二次打包的运行时签名校验门(Dex2C/伪装加固器/双重MD5 blob)。Use when the user says 去弹窗/移除弹窗/mod apk 弹窗/重打包闪退或被杀/签名门/me.tigrik/tiktokupdatez/probeq/pluzneba/libiam, or asks to repack a modified TikTok/9MOD APK that crashes after re-signing. Not for: official-app content issues, non-Android APKs, or root/Xposed runtime-hook approaches.
+---
+
 # SKILL — TikTok 魔改版 9MOD 弹窗移除方法论
 
 > **前置技能**：本技能依赖 `reverse-skill`（SKILL-reverse-skill，通用逆向基础技能），使用前必须先加载。
 > 本文档从真实案例（TikTok 9MOD v46.7.5 / v46.3.5）提炼，覆盖从定位到移除的全流程。
 > 所有断言均附字节级出处或真机证据。
+> 签名门破解的完整实录（命令级、含全部中间输出）见 `case-46.3.5/SIGNATURE-GATE-BREAKTHROUGH.md`。
 
 ---
 
@@ -10,6 +16,10 @@
 
 ```
 Triage（包信息/签名/dex 数/manifest）
+  ↓
+纯重签对照实验【2026-09-30 定为必做第一步, 见 §10.1】
+  （原包零改动 debug 重签 → 装机 → logcat 抓真实死因/杀链,
+    从源头排除"猜测性补丁", 所有后续 patch 必须能解释对照包的死亡栈）
   ↓
 找注入框架（扫全部 dex 的 class defs，找非官方包名）
   ↓
@@ -23,11 +33,15 @@ Triage（包信息/签名/dex 数/manifest）
   ↓
 还原 Dex2C native 调用链（.so 字符串表 → JNI 方法名 → 调用顺序）
   ↓
-设计 patch（优先不碰 native / 利用 mod 自己的开关 / 断 Java 取数链）
+还原 JNINativeMethod 注册表【§10.2】（哪个 Java native 方法由哪个函数实现）
+  ↓
+破解签名门【§10】（期望值等长替换 > 杀点 NOP；绝不在未验证门语义前乱 NOP）
+  ↓
+设计 patch（优先不碰 dex/native / 利用 mod 自己的开关 / 断 Java 取数链）
   ↓
 静态自检（方法签名/寄存器/try-catch 完整性）
   ↓
-重打包 + 签名
+重打包 + 签名（scripts/build_mod_apk.py）
   ↓
 真机验证（冷启动 + dumpsys + 截图 OCR + logcat 崩溃检测）
 ```
@@ -346,31 +360,48 @@ s = pat.sub(new_body, s, count=1)
   对照实验可用 `--api 24` 重汇编 fix3 的 smali 源验证。
 - 同时注意：baksmali 默认 `--api 15` 只影响解析宽松度，反汇编一般无碍；**关键在 smali 侧**。
 
-### 7.11 伪装成官方加固库的 mod 主加载器 + 多层签名门 + 动态定义类【2026-09-29 真机剖析】
+### 7.11 伪装成官方加固库的 mod 主加载器 + 动态定义类【2026-09-29 真机剖析 / 09-30 修正】
 部分发行版（46.3.5 arm8）把整个 mod 做成**伪装成官方加固库的主加载器**：
 - `TT_J/TT_S_E`（ContentProvider）里 `System.loadLibrary("iam")`——先于 Application 加载；
   libiam.so 实为 mod 主加载器，运行时 DefineClass 创建 **dex 中不存在**的类（`me/tigrik1`、
   `kotlin/jvm/internal/AFpS124S0000000_3` 等），并向 Application(11)/MainActivity(117)/mod 插件
   注册 native；dex 静态分析对动态类内的逻辑完全不可见
-- 防二次打包 = **多层签名门**：Application 生命周期、MainActivity.onCreate（sub_705A8，≥9 个 NPE
-  守卫）、钩子分发器（me/tigrik/a.a）、崩溃处理器（uncaughtException）各嵌一套
-  "摘要比对 → killProcess+exit"；逐层破解实录见 `case-46.3.5/DEVICE-DEBUG-LOG.md`
-- **动手前先确认原包能不能用**：此类 mod 常依赖远程配置（gist/自建站），配置 404 时**原包即坏**
-  （46.3.5 的 gist 已 404，原版也只崩到自带 CrashActivity）。只看"进程存活"不够，
-  必须查 `topResumedActivity` 是否真实到达主界面
+- **防二次打包的真相【09-30 纯重签对照实验修正】**：看似"多层签名门散布各处"，实际**唯一
+  主动校验签名的是 `me/tigrik.a.a`（native，sub_B6B88）的双重 MD5 门**（破解见 §10.3）。
+  其余疑似门均为"异常兜底杀"：
+  - `TT_S_E.onCreate`（sub_3E954）：`String.equals(期望摘要, 实际摘要)` 的 CallBooleanMethod
+    **返回值被忽略**——流程不抛异常就 return 1（provider 正常创建）。只有 PM 查询链抛异常
+    （签名数组空等）才走 ThrowNew NPE → printStackTrace → kill。给它改期望摘要常量
+    （XOR base64）是**无效功**
+  - MainActivity.onCreate（sub_705A8，2301 行）：是 mod 的完整替换实现而非门，NOP 其 NPE
+    守卫反而让 null 流转到下游崩（历史 expH 教训）
+- **动手前先确认原包能不能用**：此类 mod 常依赖远程配置（gist/自建站）。46.3.5 的 gist 已 404，
+  但【09-30 修正】**原包在真机/模拟器上仍可完整运行**（开屏动画、引导页、弹窗全部正常）——
+  远程配置死亡≠mod 整体死亡，只是更新/远控功能失效。判定标准：冷启动后 `topResumedActivity`
+  是否推进到引导页/主界面 + 弹窗是否出现,而不是"有没有网络请求失败"
 
 ### 7.12 静默自杀（无 FATAL/无 tombstone）的识别与杀点定位
 - 症状：启动后数秒死、三处无痕迹 → Java 层 `Process.killProcess` 自杀
 - 定位：`logcat -b events` 量 am_proc_start→am_proc_died 间隔；主日志搜
   `Process: Sending signal. PID: <pid> SIG: 9`（自杀标记，出现即 Java 自杀而非系统杀）
+- **零 frida 杀链定位法【2026-09-30, 雷电14 实战】**：root 模拟器上若 rom/框架给
+  `Process.killProcess` 打了 `System.err` 诊断栈（"call killProcess callstack!"）,
+  `logcat -d | grep -A 25 'call killProcess callstack'` 直接给出**完整 Java 调用链**
+  （本案例: killProcess ← me.tigrik.a.a(Native Method) ← MainActivity.onCreate(Native Method)）,
+  一条日志顶数天静态分析。没有该诊断时: 纯重签对照包 + `logcat -d -b crash` +
+  `dumpsys activity activities` 也能定位（对照包能走到哪, 门就在哪之后被调）
 - 杀点三连（native）：`GetStaticMethodID(Process,"myPid")` → CallStaticInt →
   `GetStaticMethodID(Process,"killProcess")` → CallStaticVoid → `System.exit`；
-  .so 内 grep "killProcess" 字符串 → xref 所在函数 → NOP 掉 CallStatic 的 `BLR X8` 即废武功
+  .so 内 grep "killProcess" 字符串 → xref 所在函数 → **先读懂门语义再决定** NOP 还是改期望值
+  （§10.3 的教训: 无脑 NOP 返回值路径会引发 NPE, 改期望值才是正解）
 - JNI 偏移速查：env+0x418=CallStaticIntMethod、env+0x478=CallStaticVoidMethodV、
   env+0x340=CallVoidMethod、env+0x720=ExceptionCheck、env+0x108=GetMethodID、
-  env+0x538=NewStringUTF、env+0x6B8=RegisterNatives
+  env+0x538=NewStringUTF、env+0x6B8=RegisterNatives、env+0xC8/0x120=Get*Class 系、
+  env+0x120(288/8=36)=CallObjectMethodV 系、env+0x550(1368/8=171)=GetArrayLength、
+  env+0x568(1384/8=173)=GetObjectArrayElement、env+0x640(1600/8=200)=GetByteArrayRegion
 - RegisterNatives 表在 .data.rel.ro，文件内槽位为 0，须解析 .rela.dyn（R_AARCH64_RELATIVE=1027）
   取 addend 还原 {name,sig,fn} 三元组，才能反查"哪个类的方法由哪个函数实现"
+  （一键脚本 `scripts/dump_jnitable.py`）
 
 ---
 
@@ -433,3 +464,124 @@ adb reverse --remove-all
 ```
 
 代理会记录所有 CONNECT 目标（域名）和 TLS ClientHello SNI（即使直连 IP 也能拿到 SNI）。
+
+---
+
+## 10. 签名门破解方法论【2026-09-30 实战沉淀, 46.3.5 全程验证】
+
+> 完整实录（每一步的命令、地址、字节、预期输出）: `case-46.3.5/SIGNATURE-GATE-BREAKTHROUGH.md`
+
+### 10.1 纯重签对照实验（必做第一步, 最高性价比）
+
+**做法**：原包**零改动**，仅用 debug keystore 重签（`scripts/build_mod_apk.py` 不带
+`--replace` 即可），装入模拟器/真机，观察死亡方式。
+
+**它能一次性回答三个问题**：
+1. 门到底存不存在（不死 = 无签名门，直接做 dex 补丁收工）
+2. 门在哪个 Java 帧触发（logcat 栈直接给出 `at xxx(Native Method)` 调用链）
+3. 原包本身是否健康（对照死亡时间线：Splash → 引导 → 主界面，死在哪一步）
+
+**46.3.5 实证**：diagld（纯重签）一路跑到 NewUserJourney 窗口后 ~40s 自杀，
+栈顶 `at me.tigrik.a.a(Native Method) ← at MainActivity.onCreate(Native Method)`——
+这一条日志纠正了此前数天"多层签名门"的错误攻坚方向。
+
+**纪律**：此后做的每一个 patch，都必须能解释"对照包为什么死、自己的包为什么活"。
+
+### 10.2 JNINativeMethod 注册表还原（定位门函数的唯一手段）
+
+native 化的方法在 dex 里只剩 `native` 声明，唯一映射在 RegisterNatives 的
+`{name*, sig*, fn*}` 24B 三元组数组里。三个坑：
+
+1. 表在 `.data.rel.ro`（PIE 重定位区），文件内指针是链接期占位值，
+   必须用 `.rela.dyn` 的 `R_AARCH64_RELATIVE(1027)` addend 覆盖——否则全表解析为 0；
+2. vaddr≠file offset（多段 LOAD 差 0x1000/0x2000），按 program header 换算；
+3. 锚点找法：在 IDA 里对疑似门函数（如含 killProcess 字符串 xref 的函数）查
+   data xref，唯一引用处即表内 fn 槽位，槽位地址 −16 = 表项起点。
+
+```bash
+python scripts/dump_jnitable.py libiam.so --anchor 0x1005e0 --span 80
+# 输出: 0x1005e0  onCreate  ()Z  fn=0x3e954   ← TT_S_E.onCreate
+#       0x100e38  onCreate  (Landroid/os/Bundle;)V  fn=0x705a8  ← MainActivity.onCreate(mod替换)
+```
+
+### 10.3 门语义判定 → 期望值替换（先读懂, 再动手）
+
+对每个疑似门函数反编译, 按此清单分类：
+
+| 特征 | 真门 | 兜底/非门 |
+|---|---|---|
+| equals/比较的**返回值参与分支**（CBZ/CBNZ W0 后走 kill） | ✅ | |
+| equals 返回值被忽略（强转 void, 无异常即 return 成功） | | ✅ 异常兜底杀 |
+| 摘要输入 = Signature.toByteArray() 且**逐 signer update** | ✅（看清楚 digest 调用次数!） | |
+| 摘要后还有二次 update/digest（双哈希!） | ✅ 复现算法时必须完整还原 | |
+| Class.forName(...) + ClassNotFoundException 被 catch 后 continue | 反 hook 黑名单探测（不杀） | |
+| Activity.finish + killProcess + System.exit 连环 | kill 路径终点（定位用） | |
+
+**46.3.5 的真门算法**（me.tigrik.a.a = sub_B6B88, 1538 行伪代码）：
+
+```
+certs  = SDK<=27 ? signatures[i].toByteArray() : signingInfo.getApkContentsSigners()[i]
+hex1   = md5(所有certs拼接).hex()                       # Integer.toString(b|0x100,16).substring(1)
+upper  = (hex1 + hex1).toUpperCase()                    # StringBuffer append 两次
+final  = md5(upper.getBytes()).hex()                    # ← 双重 MD5, 32字符小写
+期望值 = 解密 506B blob → "0Ah"前缀 + base64(Java序列化String[]) → args[0]
+final == args[0].toLowerCase() ? 校验黑名单类后返回"TRUE" : throw → finish+kill+exit
+```
+
+验证公式：`md5((md5(modder_cert_der).hex()*2).upper()) == "d6c15948fd4664126f5ccf2cd3698792"` ✓
+
+**修复 = 期望值等长替换**（不是 NOP！）：
+
+```bash
+# 用将要重签的同一张证书算新期望值并重写 blob（脚本自动完成 解密→定位→替换→重加密→回读断言）
+python scripts/patch_sig_gate_blob.py libiam_orig.so libiam_sigfix.so --cert debug_cert.der
+# libprobeq/pluzneba 的 prefs 闸门(dont)改无条件跳过:
+python scripts/patch_gate_branch.py libprobeq.so  libprobeq_nopop.so  --vaddr 0x2E7CC --target 0x2F5F8 --expect cbnz:rt=8
+python scripts/patch_gate_branch.py libpluzneba.so libpluzneba_nopop.so --vaddr 0x52980 --target 0x537B4 --expect cbnz:rt=8
+python scripts/build_mod_apk.py 原包.apk 成品.apk \
+  --replace "lib/arm64-v8a/libiam.so=libiam_sigfix.so" \
+  --replace "lib/arm64-v8a/libprobeq.so=libprobeq_nopop.so" \
+  --replace "lib/arm64-v8a/libpluzneba.so=libpluzneba_nopop.so"
+```
+
+期望值替换优于杀点 NOP 的原因：返回值语义（"TRUE"）被调用方（MainActivity 替换实现）依赖，
+粗暴 NOP 会返回 null/错误状态 → 下游 NPE（expH 系列全部失败的根因）。
+
+### 10.4 XOR-blob 加密：等效化简 + 差分重加密
+
+mod 用 NEON（`vshlq_u64` 移位表 + `vqtbl4q` 查表 + `veorq`）生成 keystream。
+**不要手工复刻 NEON**，两条捷径：
+
+1. **等效化简**：每轮 shift=(idx*8)&0x38，而 idx=16r+k ⇒ (16r+k)&7==k&7，
+   所有轮次 keystream 恒同；vqtbl4q 索引 64-120 越界返回 0，v89 只取 lane0 ⇒
+   keystream = K（8 字节小端）重复循环。解出明文验证：应为 `3字符前缀 + base64(序列化流, 头 ac ed 00 05)`。
+   （46.3.5: K=0xDF278B5B95B52DF3, blob@0x23E64, 506B, 脚本 `scripts/decode_xor_blob.py`）
+2. **差分重加密**：XOR 流密码下 `新密文 = 旧密文 ⊕ 旧明文 ⊕ 新明文`。
+   只要做**等长替换**（32hex→32hex），连 keystream 都不用完全理解。
+
+坑位记录：Java 序列化流的 String = `0x74 + u2 len + modified-UTF8`（等长 ASCII 替换安全）；
+Android `Base64.decode(str, 0)` 容忍缺 padding，Python 侧需手动补 `=` 再解码。
+
+### 10.5 反 hook 黑名单（Class.forName 探测）
+
+blob 序列化数组 args[1:] 存的是 hook 框架类名，native 逐个 `Class.forName` 探测，
+**ClassNotFoundException 被 catch 后 continue（不杀）**——只有 args[0]（签名期望值）
+不匹配才杀。46.3.5 黑名单：`com.swift.sandhook.SandHook`、`sharkfall.inc.signkiller.SignKillerApp`、
+`org.EirvAppComponentFactoryStub`、`np.manager.FuckSign`、`np.App`、`lucky.patcher.sign.hook`、
+`yazdan.SignHook`、`arm.StubApp`、`cnfix.FuckSign`、`cc.binmt.signature.PmsHookApplication`、
+`org.lsposed.hiddenapibypass.HiddenApiBypass`。
+**含义**：任何基于这些框架的"运行时签名伪装"方案会被 native 探测并 kill；
+静态等长替换期望值不在黑名单之列，是唯一穿门路径。
+
+### 10.6 标准作业流程（SOP 汇总）
+
+```
+1. python scripts/sigblock_extract.py 原包.apk              # 全部证书 + 哈希
+2. adb shell dumpsys package <pkg> | grep -A2 Signatures    # PM 实际记录哪张(三方对账)
+3. build_mod_apk.py 原包.apk 对照.apk                        # 纯重签对照包 → 装机 → 抓杀链(§10.1)
+4. IDA: 对照包死点函数反编译 → 门语义分类(§10.3 表格)
+5. dump_jnitable.py 还原注册表 → 确认"死点帧"对应的 native fn
+6. 按门类型修复: 期望值等长替换(patch_sig_gate_blob) / 闸门改跳(patch_gate_branch)
+7. build_mod_apk.py 组包重签 → 模拟器验证存活 + topResumedActivity 推进
+8. 真机验证（§8）+ 弹窗不出现确认
+```
