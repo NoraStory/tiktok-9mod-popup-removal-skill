@@ -99,25 +99,75 @@ python scripts/build_mod_apk.py TikTok-v46.3.5-arm8.apk 无弹窗.apk `
 
 ---
 
-## 目录结构
+## 目录与文档导航
 
-```
-├── SKILL.md                 完整方法论(测试环境/流程/签名门破解/陷阱清单)
-├── scripts/                 17 个工具脚本(核心 6 个 + 辅助 11 个)
-│   ├── version_detect.py    版本探测:自动发现 mod 布局与推荐策略
-│   ├── sigblock_extract.py  提取 APK v1/v2/v3 全部签名证书
-│   ├── dump_jnitable.py     还原 JNINativeMethod 注册表(含重定位解析)
-│   ├── decode_xor_blob.py   解密 NEON XOR 加密 blob(等效 keystream)
-│   ├── patch_sig_gate_blob.py  重写双重 MD5 签名门期望值(差分重加密)
-│   ├── patch_gate_branch.py    条件分支改无条件跳转(弹窗闸门)
-│   ├── build_mod_apk.py     组包+对齐+签名一条龙
-│   ├── dexscan.py / adrpscan.py / adrp_xref.py / jninative.py / poolscan.py
-│   ├── logproxy.py / rebuild_apk.py / pair_and_connect.sh / popup_watch.sh
-│   └── java_trace.js        Frida 追踪脚本(可选)
-├── case-46.3.5/             v46.3.5 案例:签名门破解完整实录 + 踩坑记录
-├── case-46.7.5/             v46.7.5 案例:去弹窗补丁与验证
-└── SHA256SUMS.txt           文件完整性校验
-```
+**本项目每个路径是什么、干什么用的:**
+
+### 根目录
+
+| 路径 | 说明 |
+|---|---|
+| `SKILL.md` | **核心方法论主文档**(Agent 加载的技能正文)。含:测试环境与工具版本、五步总流程、混淆还原、Dex2C 调用链还原、Patch 策略、陷阱清单(14 条)、签名门破解方法论(§10,含纯重签对照实验/JNI 注册表还原/双重 MD5 门/SOP) |
+| `README.md` | 本文件。项目介绍、适配版本、快速开始、导航 |
+| `LICENSE` | AGPL-3.0 协议全文 |
+| `SHA256SUMS.txt` | 全部文档与脚本的完整性校验和 |
+
+### `scripts/` — 17 个工具脚本
+
+**核心流水线(按 §10 SOP 的使用顺序):**
+
+| 脚本 | 用途 |
+|---|---|
+| `version_detect.py` | 第一步:探测 mod 发行版布局、注入框架、native 库,输出推荐策略 |
+| `sigblock_extract.py` | 提取 APK 的 v1/v2/v3 全部签名证书并计算哈希(与 dumpsys 三方对账) |
+| `dump_jnitable.py` | 还原 .so 里的 JNINativeMethod 注册表(哪个 Java native 方法由哪个函数实现,含 RELATIVE 重定位解析) |
+| `decode_xor_blob.py` | 解密 NEON XOR 加密 blob(等效 keystream 化简,用于读取签名门期望值) |
+| `patch_sig_gate_blob.py` | 重写签名门期望值:等长替换 + 差分重加密 + 回读断言 |
+| `patch_gate_branch.py` | 把 prefs 闸门的条件分支(CBNZ)改写为无条件跳转(弹窗闸门关闭) |
+| `build_mod_apk.py` | 组包:替换 zip 条目 → zipalign → apksigner 签名;不带 --replace 即"纯重签对照包" |
+
+**辅助脚本:**
+
+| 脚本 | 用途 |
+|---|---|
+| `dexscan.py` | 轻量 DEX 解析:按包前缀找注入类/调用点 |
+| `adrpscan.py` / `adrp_xref.py` | AArch64 ADRP+ADD/LDR 扫描与交叉引用(定位字符串引用) |
+| `jninative.py` | ELF JNI 方法表解析(早期版本,`dump_jnitable.py` 为其增强) |
+| `poolscan.py` | Dex2C 字符串池基址与偏移还原 |
+| `rebuild_apk.py` | 定点替换 zip 条目重组 APK(早期版本,`build_mod_apk.py` 为其增强) |
+| `logproxy.py` | adb reverse 日志代理:抓 CONNECT 域名 / TLS SNI |
+| `pair_and_connect.sh` | adb 无线配对重试(30 秒窗口) |
+| `popup_watch.sh` | 弹窗监控(dumpsys window + uiautomator dump) |
+| `java_trace.js` | Frida Java-bridge 追踪脚本(可选,仅模拟器) |
+
+### `case-46.3.5/` — v46.3.5 案例档案(主案例,签名门破解)
+
+| 文档 | 内容 |
+|---|---|
+| `SIGNATURE-GATE-BREAKTHROUGH.md` | **签名门破解完整实录**(命令级):纯重签对照实验、双重 MD5 门全解、blob 差分重加密、最终成品 nopop-v3 与双端验证 |
+| `DEVICE-DEBUG-LOG.md` | 真机调试日志:杀点定位、JNI 表、动态定义类、frida 各轮实验记录 |
+| `NOTES.md` | 中间分析笔记:dex 版本门、构建链、早期误区与证伪 |
+| `VERIFICATION.md` | 各轮验证包的结果矩阵 |
+| `../test-data-46.3.5/` | (相邻目录)该案例的最终产物与证据备份,见下 |
+
+### `case-46.7.5/` — v46.7.5 案例档案
+
+| 文档 | 内容 |
+|---|---|
+| `NOTES.md` | 去弹窗补丁方案与真机验证记录(该版本无签名门) |
+
+### `test-data-46.3.5/` — 测试数据备份(非代码,9.8MB)
+
+**存的是什么**:v46.3.5 案例最终真实可用的产物与逆向证据,未上传任何 APK/IDA 库/大二进制。
+
+| 文件组 | 内容 |
+|---|---|
+| `libiam_sigfix.so` + `libprobeq_nopop.so` + `libpluzneba_nopop.so` + `classes42_patched_037.dex` | 无弹窗成品的**全部 4 处改动**(签名门 blob / 两个弹窗闸门 / dex 断链),附逐文件说明 |
+| `libiam_orig.so` / `libprobeq.so` / `libpluzneba.so` | 原版基线(零修改,供复分析) |
+| `tigrik_blob_enc.bin` / `tigrik_serial.bin` | 签名门加密 blob 与解密后的序列化流(期望值 + 反 hook 黑名单证据) |
+| `modder_*.der` / `modder_cert_*.bin` / `debug_cert.der` / `our_cert_sha256.bin` | 原版与重签证书及摘要(哈希对账) |
+
+每个文件的字节级说明见 `test-data-46.3.5/README.md`。
 
 ---
 
